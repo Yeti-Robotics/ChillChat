@@ -11,6 +11,7 @@ const ChannelKVSchema = new Schema({
   channelId: {
     type: String,
     required: true,
+    index: true,
   },
 });
 

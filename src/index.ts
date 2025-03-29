@@ -94,6 +94,11 @@ client.on(Events.MessageCreate, async (message) => {
           channelId: channel.id,
         });
 
+        await ChannelKV.create({
+          authorId: message.author.id,
+          channelId: channel.id,
+        });
+
         await channel.send({
           embeds: [
             {
@@ -150,9 +155,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       });
     } else if (interaction.commandName === "respond") {
       // Check if the command is used in a modmail channel
-      const modmailEntry = Array.from(client.modmailChannels.values()).find(
-        (entry) => entry.channelId === interaction.channelId
-      );
+      const modmailEntry = await ChannelKV.findOne({
+        channelId: interaction.channelId,
+      });
 
       if (!modmailEntry) {
         await interaction.reply({
@@ -165,7 +170,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const message = interaction.options.getString("message", true);
 
       try {
-        const user = await client.users.fetch(modmailEntry.userId);
+        const user = await client.users.fetch(modmailEntry.authorId);
         await user.send(`**Staff Response:** ${message}`);
 
         await interaction.reply({
