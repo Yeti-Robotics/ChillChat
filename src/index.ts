@@ -7,6 +7,8 @@ import {
 } from "discord.js";
 import { config as dotenvConfig } from "dotenv";
 import { ExtendedClient } from "./types";
+import { connectToDatabase } from "./lib/database";
+import ChannelKV from "./lib/database/models/ChannelKV";
 
 // Load environment variables
 dotenvConfig();
@@ -31,7 +33,6 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.DirectMessages,
-    // GatewayIntentBits.MessageContent,
   ],
   partials: [Partials.Channel, Partials.Message, Partials.User],
 }) as ExtendedClient;
@@ -55,7 +56,9 @@ client.on(Events.MessageCreate, async (message) => {
 
   try {
     // Check if there's an existing modmail channel for this user
-    const existingChannel = client.modmailChannels.get(message.author.id);
+    const existingChannel = await ChannelKV.findOne({
+      authorId: message.author.id,
+    }).catch(() => null);
 
     if (existingChannel) {
       // Forward message to existing channel
@@ -88,6 +91,11 @@ client.on(Events.MessageCreate, async (message) => {
 
         client.modmailChannels.set(message.author.id, {
           userId: message.author.id,
+          channelId: channel.id,
+        });
+
+        await ChannelKV.create({
+          authorId: message.author.id,
           channelId: channel.id,
         });
 
@@ -147,9 +155,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       });
     } else if (interaction.commandName === "respond") {
       // Check if the command is used in a modmail channel
-      const modmailEntry = Array.from(client.modmailChannels.values()).find(
-        (entry) => entry.channelId === interaction.channelId
-      );
+      const modmailEntry = await ChannelKV.findOne({
+        channelId: interaction.channelId,
+      });
 
       if (!modmailEntry) {
         await interaction.reply({
@@ -162,7 +170,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const message = interaction.options.getString("message", true);
 
       try {
-        const user = await client.users.fetch(modmailEntry.userId);
+        const user = await client.users.fetch(modmailEntry.authorId);
         await user.send(`**Staff Response:** ${message}`);
 
         await interaction.reply({
@@ -187,6 +195,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       });
     }
   }
+});
+
+client.on(Events.ClientReady, async () => {
+  await connectToDatabase();
 });
 
 // Login to Discord
