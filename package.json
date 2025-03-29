@@ -6,17 +6,19 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
+    "mongo:up": "docker compose -f docker-compose.yml up -d",
     "dev": "ts-node src/index.ts",
     "watch": "tsc -w",
     "deploy-commands": "ts-node src/commands.ts"
   },
   "dependencies": {
-    "discord.js": "^14.14.1",
-    "dotenv": "^16.4.5"
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.4.7",
+    "mongoose": "^8.13.1"
   },
   "devDependencies": {
-    "@types/node": "^20.11.19",
+    "@types/node": "^20.17.28",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.3"
+    "typescript": "^5.8.2"
   }
-} 
+}

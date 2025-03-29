@@ -7,6 +7,8 @@ import {
 } from "discord.js";
 import { config as dotenvConfig } from "dotenv";
 import { ExtendedClient } from "./types";
+import { connectToDatabase } from "./lib/database";
+import ChannelKV from "./lib/database/models/ChannelKV";
 
 // Load environment variables
 dotenvConfig();
@@ -31,7 +33,6 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.DirectMessages,
-    // GatewayIntentBits.MessageContent,
   ],
   partials: [Partials.Channel, Partials.Message, Partials.User],
 }) as ExtendedClient;
@@ -55,7 +56,9 @@ client.on(Events.MessageCreate, async (message) => {
 
   try {
     // Check if there's an existing modmail channel for this user
-    const existingChannel = client.modmailChannels.get(message.author.id);
+    const existingChannel = await ChannelKV.findOne({
+      authorId: message.author.id,
+    }).catch(() => null);
 
     if (existingChannel) {
       // Forward message to existing channel
@@ -187,6 +190,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       });
     }
   }
+});
+
+client.on(Events.ClientReady, async () => {
+  await connectToDatabase();
 });
 
 // Login to Discord
