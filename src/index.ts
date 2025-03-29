@@ -79,7 +79,7 @@ client.on(Events.MessageCreate, async (message) => {
         client.config.modmailCategoryId
       );
 
-      if (!category?.isTextBased()) {
+      if (category) {
         const channel = await guild.channels.create({
           name: `modmail-${message.author.username}`,
           type: 0, // Text channel
