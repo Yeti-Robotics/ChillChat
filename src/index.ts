@@ -1,4 +1,5 @@
 import {
+  ActivityType,
   Client,
   Events,
   GatewayIntentBits,
@@ -7,8 +8,10 @@ import {
 } from "discord.js";
 import { config as dotenvConfig } from "dotenv";
 import { ExtendedClient } from "./types";
-import { connectToDatabase } from "./lib/database";
+import { connectToDatabase } from "./lib/database/database";
 import ChannelKV from "./lib/database/models/ChannelKV";
+import { anonymous, respond, close } from "./lib/commands";
+import { generateEmbed, logToChannel } from "./lib/utils/embed";
 
 // Load environment variables
 dotenvConfig();
@@ -46,9 +49,6 @@ client.config = {
   logChannelId: process.env.LOG_CHANNEL_ID,
 };
 
-// Initialize modmail channels map
-client.modmailChannels = new Map();
-
 // Handle DM messages
 client.on(Events.MessageCreate, async (message) => {
   // Ignore messages from bots and messages in guilds
@@ -64,16 +64,28 @@ client.on(Events.MessageCreate, async (message) => {
       // Forward message to existing channel
       const channel = await client.channels.fetch(existingChannel.channelId);
       if (channel?.isTextBased() && channel.isSendable()) {
-        await channel.send({
-          embeds: [
-            {
-              title: "New DM",
-              description: message.content,
-              color: 0x0099ff,
-              timestamp: new Date().toISOString(),
-            },
-          ],
+        await channel.send(
+          generateEmbed(
+            "Incoming Message",
+            message.content,
+            message.author,
+            0x00ff00
+          )
+        );
+        await message.reply({
+          content:
+            "I passed along this message :slight_smile:. I'll keep you updated here with any responses!",
         });
+
+        // Log the incoming message
+        await logToChannel(
+          client,
+          "Incoming Modmail Message",
+          `User: ${message.author.tag}\nChannel: ${
+            !channel.isDMBased() ? channel.name : "Unknown"
+          }\nMessage: ${message.content}`,
+          0x00ff00
+        );
       }
     } else {
       // Create new modmail channel
@@ -89,30 +101,46 @@ client.on(Events.MessageCreate, async (message) => {
           parent: client.config.modmailCategoryId,
         });
 
-        client.modmailChannels.set(message.author.id, {
-          userId: message.author.id,
-          channelId: channel.id,
-        });
-
         await ChannelKV.create({
           authorId: message.author.id,
           channelId: channel.id,
         });
 
-        await channel.send({
-          embeds: [
-            {
-              title: "New Modmail Thread",
-              description: `Thread started by ${message.author.tag}\n\nFirst message:\n${message.content}`,
-              color: 0x0099ff,
-              timestamp: new Date().toISOString(),
-            },
-          ],
-        });
+        await channel.send(
+          generateEmbed(
+            "New Mentormail Thread",
+            `Thread started by ${message.author.tag}\n\nMessage:\n${message.content}`,
+            message.author,
+            0x00ff00
+          )
+        );
+
+        // Log new thread creation
+        await logToChannel(
+          client,
+          "New Modmail Thread Created",
+          `User: ${message.author.tag}\nChannel: ${channel.name}\nInitial Message: ${message.content}`,
+          0x00ff00
+        );
       }
+
+      await message.reply(
+        generateEmbed(
+          "Mentormail Thread Opened",
+          "I've opened a new thread for you. I'll get back to you as soon as your mentors respond!",
+          message.author,
+          0x00ff00
+        )
+      );
     }
   } catch (error) {
-    console.error("Error handling DM:", error);
+    console.error("Error handling message:", error);
+    await logToChannel(
+      client,
+      "Error Handling Message",
+      `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
+      0xff0000
+    );
   }
 });
 
@@ -120,70 +148,16 @@ client.on(Events.MessageCreate, async (message) => {
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
     if (!interaction.isChatInputCommand()) return;
-
-    if (interaction.commandName === "anonymous") {
-      const message = interaction.options.getString("message", true);
-
-      // Get the anonymous channel from the main guild
-      const guild = await client.guilds.fetch(client.config.guildId);
-      const anonymousChannel = await guild.channels.fetch(
-        client.config.anonymousChannelId
-      );
-
-      if (!anonymousChannel?.isTextBased()) {
-        await interaction.reply({
-          content: "Failed to send anonymous message. Please try again later.",
-          flags: MessageFlags.Ephemeral,
-        });
-        return;
-      }
-
-      await anonymousChannel.send({
-        embeds: [
-          {
-            title: "Anonymous Message",
-            description: message,
-            color: 0x0099ff,
-            timestamp: new Date().toISOString(),
-          },
-        ],
-      });
-
-      await interaction.reply({
-        content: "Your anonymous message has been sent!",
-        flags: MessageFlags.Ephemeral,
-      });
-    } else if (interaction.commandName === "respond") {
-      // Check if the command is used in a modmail channel
-      const modmailEntry = await ChannelKV.findOne({
-        channelId: interaction.channelId,
-      });
-
-      if (!modmailEntry) {
-        await interaction.reply({
-          content: "This command can only be used in modmail channels!",
-          flags: MessageFlags.Ephemeral,
-        });
-        return;
-      }
-
-      const message = interaction.options.getString("message", true);
-
-      try {
-        const user = await client.users.fetch(modmailEntry.authorId);
-        await user.send(`**Staff Response:** ${message}`);
-
-        await interaction.reply({
-          content: "Response sent successfully!",
-          flags: MessageFlags.Ephemeral,
-        });
-      } catch (error) {
-        console.error("Error sending DM to user:", error);
-        await interaction.reply({
-          content: "Failed to send response. Please try again later.",
-          flags: MessageFlags.Ephemeral,
-        });
-      }
+    switch (interaction.commandName) {
+      case "anonymous":
+        await anonymous(client, interaction);
+        break;
+      case "respond":
+        await respond(client, interaction);
+        break;
+      case "close":
+        await close(client, interaction);
+        break;
     }
   } catch (error) {
     console.error("Error handling interaction:", error);
@@ -199,6 +173,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 client.on(Events.ClientReady, async () => {
   await connectToDatabase();
+  client.user?.setActivity("for questions/feedback", {
+    type: ActivityType.Watching,
+  });
 });
 
 // Login to Discord
