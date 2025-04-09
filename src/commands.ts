@@ -31,6 +31,15 @@ const guildCommands = [
         .setDescription("Your response to send to the user")
         .setRequired(true)
     ),
+  new SlashCommandBuilder()
+    .setName("close")
+    .setDescription("Close the modmail thread")
+    .addStringOption((option) =>
+      option
+        .setName("reason")
+        .setDescription("The reason for closing the thread")
+        .setRequired(true)
+    ),
 ];
 
 // Validate required environment variables
